@@ -7,3 +7,9 @@ vendor/
 sources/*.pdf
 !sources/.gitkeep
 coverage/
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
