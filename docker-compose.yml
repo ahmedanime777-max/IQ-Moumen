@@ -1,0 +1,36 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+
+  mcp:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - qdrant
+    env_file:
+      - .env
+    environment:
+      # Inside the compose network, reach Qdrant by service name.
+      QDRANT_URL: http://qdrant:6333
+      SOURCES_DIR: /app/sources
+      DATA_DIR: /app/data
+      TRANSFORMERS_CACHE: /app/data/models
+      PORT: "3000"
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      # Your PDF library — drop files here (persists across restarts).
+      - ./sources:/app/sources
+      # Indexed metadata, rendered page images and the embedding-model cache.
+      - ./data:/app/data
+
+volumes:
+  qdrant_storage:

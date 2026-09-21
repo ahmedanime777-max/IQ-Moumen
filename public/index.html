@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aptitude Trainer · MCP Knowledge Base</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="grain"></div>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">◧</div>
+        <div>
+          <h1>Aptitude Trainer</h1>
+          <p class="sub">Private IQ / reasoning knowledge base · MCP for ChatGPT</p>
+        </div>
+      </div>
+      <div class="stat-strip" data-testid="stats-strip">
+        <div class="stat"><span data-testid="stat-sources" class="num">0</span><label>Sources</label></div>
+        <div class="stat"><span data-testid="stat-questions" class="num">0</span><label>Questions</label></div>
+        <div class="stat"><span data-testid="stat-passages" class="num">0</span><label>Passages</label></div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="panel span-2" data-testid="connect-panel">
+        <div class="panel-head"><h2>Connect to ChatGPT</h2><span class="pill" data-testid="providers-pill"></span></div>
+        <p class="hint">Add this as a custom MCP connector (Streamable HTTP). Requests require the Bearer token.</p>
+        <div class="field">
+          <label>MCP endpoint</label>
+          <div class="copy-row">
+            <input readonly data-testid="mcp-url" id="mcpUrl" />
+            <button class="btn ghost" data-testid="copy-url-btn" onclick="copyVal('mcpUrl')">Copy</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Authorization header</label>
+          <div class="copy-row">
+            <input readonly data-testid="mcp-auth" id="mcpAuth" />
+            <button class="btn ghost" data-testid="copy-auth-btn" onclick="copyVal('mcpAuth')">Copy</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" data-testid="upload-panel">
+        <div class="panel-head"><h2>Add sources</h2></div>
+        <div id="dropzone" class="dropzone" data-testid="dropzone">
+          <input type="file" id="fileInput" accept="application/pdf" multiple data-testid="file-input" hidden />
+          <div class="dz-inner">
+            <div class="dz-icon">⬍</div>
+            <p>Drop PDFs here or <button class="link" data-testid="browse-btn" onclick="document.getElementById('fileInput').click()">browse</button></p>
+            <small>Any IQ / aptitude / reasoning PDF. No code changes needed.</small>
+          </div>
+        </div>
+        <div class="row-actions">
+          <button class="btn primary" data-testid="upload-btn" onclick="doUpload()">Upload &amp; index</button>
+          <button class="btn ghost" data-testid="reindex-all-btn" onclick="reindexAll()">Re-index all</button>
+        </div>
+        <div id="ingestStatus" class="ingest-status" data-testid="ingest-status"></div>
+      </section>
+
+      <section class="panel span-3" data-testid="sources-panel">
+        <div class="panel-head"><h2>Indexed sources</h2><button class="btn ghost sm" data-testid="refresh-sources-btn" onclick="loadAll()">Refresh</button></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Document</th><th>Status</th><th>Questions</th><th>Pages</th><th>Image pages</th><th>Categories</th><th></th></tr>
+            </thead>
+            <tbody id="sourcesBody" data-testid="sources-body">
+              <tr><td colspan="7" class="empty">No sources yet — upload a PDF to begin.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel span-3" data-testid="search-panel">
+        <div class="panel-head"><h2>Semantic search &amp; question inspector</h2></div>
+        <div class="search-bar">
+          <input id="searchQuery" placeholder="e.g. a difficult percentage question" data-testid="search-input" onkeydown="if(event.key==='Enter')doSearch()" />
+          <select id="fCategory" data-testid="filter-category"></select>
+          <select id="fDifficulty" data-testid="filter-difficulty"></select>
+          <select id="fSource" data-testid="filter-source"></select>
+          <button class="btn primary" data-testid="search-btn" onclick="doSearch()">Search</button>
+          <button class="btn ghost" data-testid="browse-btn2" onclick="browseQuestions()">Browse questions</button>
+        </div>
+        <div id="results" class="results" data-testid="results"></div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" data-testid="toast"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

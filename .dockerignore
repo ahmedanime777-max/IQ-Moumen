@@ -1,0 +1,9 @@
+node_modules
+dist
+data
+vendor
+sources/*.pdf
+.git
+.env
+npm-debug.log
+*.log
