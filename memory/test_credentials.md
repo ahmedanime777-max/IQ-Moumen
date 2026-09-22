@@ -1,19 +1,23 @@
 # Test Credentials & Access
 
-## MCP endpoint (Bearer-token protected)
-- URL (preview): https://logic-engine-23.preview.emergentagent.com/mcp
+## Authentication: NONE
+This app has **no authentication**. There are no user accounts, no OAuth, and no Bearer
+token. The MCP endpoint is fully public.
+
+## MCP endpoint (public — no auth header)
+- URL (preview): https://c49cdfce-0e72-4e90-aa82-e94635eab524.preview.emergentagent.com/mcp
 - Local: http://localhost:3000/mcp
-- Auth header: `Authorization: Bearer iq-mcp-local-dev-token-9f3a2b7c`
-  (value = `MCP_AUTH_TOKEN` in /app/.env)
+- Connect ChatGPT directly to the URL — do NOT set any Authorization header.
 
 ## Dashboard (no login)
-- https://logic-engine-23.preview.emergentagent.com/  (open, no auth)
+- https://c49cdfce-0e72-4e90-aa82-e94635eab524.preview.emergentagent.com/
 
 ## Services
-- Node MCP+dashboard server: port 3000 (supervisor `frontend` -> tsx src/server/index.ts)
-- Qdrant: http://localhost:6333 (supervisor `qdrant`)
-- Python LLM bridge: http://localhost:8001/api/llm/complete (supervisor `backend`)
+- Node MCP + dashboard server: port 3000 (supervisor `frontend` -> scripts/start-server.sh -> tsx src/server/index.ts)
+- Qdrant: http://localhost:6333 (started by scripts/start-server.sh)
+- Python LLM bridge: http://localhost:8001/api/llm/complete (supervisor `backend`, Emergent LLM key)
 
 ## Notes
-- No user accounts in this app. The only secret is the MCP Bearer token above.
-- Sample data: sources/sample-aptitude-test.pdf (generated via `yarn make-sample`).
+- No secrets are required to use the API.
+- Sample data: `sources/sample-scanned-test.pdf` (image-only OCR demo, via `tsx scripts/make-scanned-sample.ts`).
+- Optional text sample: `yarn make-sample` -> `sources/sample-aptitude-test.pdf`.

@@ -166,7 +166,9 @@ function isNoise(text: string): boolean {
   const t = text.trim();
   if (t.length < 12) return true;
   if (/\.{4,}\s*\d+\s*$/.test(t)) return true; // TOC dotted leader
-  if (!/[a-zA-Z]/.test(t)) return true;
+  // Must contain some real letters — Latin OR Arabic (Arabic-only questions are
+  // valid content and must NOT be discarded).
+  if (!/[a-zA-Z\u0600-\u06FF]/.test(t)) return true;
   if (/^page\s+\d+/i.test(t)) return true;
   if (/copyright|all rights reserved|\bisbn\b/i.test(t) && t.length < 120) return true;
   return false;
@@ -192,19 +194,24 @@ function buildAnswerKey(pages: PageContent[]): Map<number, string> {
   return key;
 }
 
-// Split a question block into stem + labelled choices.
-function extractChoices(block: string): { stem: string; choices?: string[] } {
-  const markerRe = /(?:^|\s)\(?([A-Ea-e])[).]\s+/g;
+// Split a question block into stem + labelled choices. Supports Latin (A-E),
+// Arabic (أ ب ج د هـ) and enclosed variants like "(A)" / "(أ)".
+function findChoiceRun(
+  block: string,
+  markerRe: RegExp,
+  alphabet: string[],
+  normalize: (l: string) => string
+): { stem: string; choices?: string[] } | null {
   const markers: { letter: string; index: number; matchLen: number }[] = [];
   let m: RegExpExecArray | null;
+  markerRe.lastIndex = 0;
   while ((m = markerRe.exec(block))) {
-    markers.push({ letter: m[1].toUpperCase(), index: m.index, matchLen: m[0].length });
+    markers.push({ letter: normalize(m[1]), index: m.index, matchLen: m[0].length });
   }
-  // Require an ordered run starting at A/a to treat as choices.
-  const start = markers.findIndex((x) => x.letter === 'A');
-  if (start === -1 || markers.length - start < 2) return { stem: collapseWhitespace(block) };
+  const first = alphabet[0];
+  const start = markers.findIndex((x) => x.letter === first);
+  if (start === -1 || markers.length - start < 2) return null;
   const run = markers.slice(start);
-  // Ensure roughly sequential letters (A,B,C...).
   const stem = collapseWhitespace(block.slice(0, run[0].index));
   const choices: string[] = [];
   for (let i = 0; i < run.length; i++) {
@@ -213,8 +220,33 @@ function extractChoices(block: string): { stem: string; choices?: string[] } {
     const val = collapseWhitespace(block.slice(from, to));
     if (val) choices.push(`${run[i].letter}) ${val}`);
   }
-  if (choices.length < 2) return { stem: collapseWhitespace(block) };
+  if (choices.length < 2) return null;
   return { stem, choices };
+}
+
+// Normalize Arabic alef/hamza variants so أ/إ/آ/ا all match the first choice.
+const normAr = (l: string) => (/[أإآا]/.test(l) ? 'ا' : l.replace(/ـ$/, ''));
+
+function extractChoices(block: string): { stem: string; choices?: string[] } {
+  // 1) Latin A-E markers ("A)" "a." "(B)")
+  const latin = findChoiceRun(
+    block,
+    /(?:^|\s)\(?([A-Ea-e])[).\-]\s+/g,
+    ['A', 'B', 'C', 'D', 'E'],
+    (l) => l.toUpperCase()
+  );
+  if (latin) return latin;
+
+  // 2) Arabic letter markers ("أ)" "ب-" "(ج)")
+  const arabic = findChoiceRun(
+    block,
+    /(?:^|\s)\(?([أإآا]|ب|ج|د|هـ|ه)\s*[).\-]\s+/g,
+    ['ا', 'ب', 'ج', 'د', 'ه'],
+    normAr
+  );
+  if (arabic) return arabic;
+
+  return { stem: collapseWhitespace(block) };
 }
 
 function extractInlineAnswer(block: string): string | undefined {

@@ -8,9 +8,11 @@ of training tools — **no code changes needed to add new sources**.
 > This project is **completely generic**. It is not tied to any book, author, publisher
 > or named test. Upload different sources later and the same server keeps working.
 
-- **MCP over Streamable HTTP** at `POST /mcp` (Bearer-token protected) — connectable to ChatGPT.
+- **MCP over Streamable HTTP** at `POST /mcp` — **public, no authentication** (no OAuth, no Bearer token) — connectable to ChatGPT.
 - **Vector search** with **Qdrant** + embeddings (offline local model by default, or OpenAI).
 - **PDF ingestion** with page numbers, section/category/difficulty detection, and duplicate detection.
+- **Scanned / CamScanner PDFs**: per-page OCR (Arabic + English via Tesseract) so image-only pages still yield real questions instead of `0`.
+- **Arabic-first output**: every question, choice and explanation is presented in Arabic with **Western digits (0-9)**, translating English/other sources automatically.
 - **Image-based questions**: pages with figures/matrices/shapes are rendered and returned so
   ChatGPT never has to guess missing visual information.
 - **Web dashboard** to upload, view, search, re-index, delete sources and inspect extracted questions.
@@ -22,7 +24,7 @@ of training tools — **no code changes needed to add new sources**.
 
 ```
 src/
-  server/      Express app, MCP endpoint (Streamable HTTP), auth, REST API
+  server/      Express app, MCP endpoint (Streamable HTTP, public), REST API
   tools/       (MCP tools are registered in server/mcp.ts)
   ingestion/   ingest pipeline + source manager (new/changed/deleted detection)
   extraction/  PDF text/page-image extraction (poppler) + question segmentation
@@ -45,12 +47,14 @@ registry tracks documents and file hashes.
 
 ## 2. Install
 
-**Requirements:** Node.js >= 20, and [`poppler-utils`](https://poppler.freedesktop.org/)
-(`pdftotext`, `pdftoppm`, `pdfimages`) on the host. A running **Qdrant** instance.
+**Requirements:** Node.js >= 20, [`poppler-utils`](https://poppler.freedesktop.org/)
+(`pdftotext`, `pdftoppm`, `pdfimages`) and **Tesseract OCR** with the Arabic + English
+language data on the host. A running **Qdrant** instance.
 
 ```bash
-# system dependency (Debian/Ubuntu)
-sudo apt-get install -y poppler-utils      # macOS: brew install poppler
+# system dependencies (Debian/Ubuntu)
+sudo apt-get install -y poppler-utils tesseract-ocr tesseract-ocr-ara tesseract-ocr-eng
+# macOS: brew install poppler tesseract tesseract-lang
 
 # project dependencies
 yarn install
@@ -70,16 +74,20 @@ cp .env.example .env
 |---|---|
 | `PORT`, `HOST` | Server bind address (default `3000`). |
 | `PUBLIC_BASE_URL` | Public HTTPS base used to build image URLs and the MCP URL shown in the dashboard. |
-| `MCP_AUTH_TOKEN` | **Bearer token** required for `POST /mcp`. Use a long random string. Empty = auth disabled. |
 | `SOURCES_DIR`, `DATA_DIR` | Where PDFs and indexed data live. |
 | `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION` | Vector database connection. |
 | `EMBEDDING_PROVIDER` | `local` (offline, default) or `openai`. |
 | `LOCAL_EMBEDDING_MODEL`, `TRANSFORMERS_CACHE` | Local model + cache dir. |
 | `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`, `OPENAI_BASE_URL` | Used only when `EMBEDDING_PROVIDER=openai`. |
-| `LLM_PROVIDER` | `none` (heuristics only), `openai`, or `bridge`. Used for category/difficulty estimation and reasoning **only when the source has none**. |
+| `LLM_PROVIDER` | `none`, `openai`, or `bridge`. Used for English→Arabic translation and for category/difficulty/reasoning **only when the source has none**. |
 | `LLM_MODEL`, `LLM_BRIDGE_URL` | LLM model + bridge endpoint (for `bridge`). |
 | `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP_CHARS`, `EMBED_BATCH_SIZE` | Ingestion tuning. |
 | `RENDER_PAGE_IMAGES`, `IMAGE_DPI` | Render page images for figure-based questions. |
+| `OCR_ENABLED` | Turn on per-page OCR for scanned/image-only pages (default `true`). |
+| `OCR_LANGS` | Tesseract languages, e.g. `ara+eng`. Language data must be installed. |
+| `OCR_DPI`, `OCR_MAX_PAGES`, `OCR_MIN_USEFUL_CHARS` | OCR render DPI, page cap, and the min real characters before a page is treated as "text" (below it → OCR). |
+| `PRESENT_LANGUAGE` | User-facing language (default `ar`). |
+| `WESTERN_DIGITS` | Force Western digits `0-9` everywhere (default `true`). |
 | `AUTO_INGEST` | Watch `sources/` and auto-index new/changed PDFs. |
 
 > **Never** expose API keys through MCP responses — the server does not, and only the
@@ -150,7 +158,7 @@ yarn dev             # watch mode
 ```
 
 Endpoints:
-- `POST /mcp` — MCP Streamable HTTP (Bearer token required)
+- `POST /mcp` — MCP Streamable HTTP (**public — no authentication**)
 - `GET  /health` — health check
 - `/` — web dashboard
 - `/rest/*` — dashboard REST API, `/rest/images/*` — rendered page images
@@ -162,9 +170,9 @@ Endpoints:
 In ChatGPT, add a **custom connector / MCP server** (Developer mode / Connectors):
 
 - **URL:** `https://YOUR-DOMAIN/mcp`
-- **Auth:** Bearer token -> the value of `MCP_AUTH_TOKEN`
+- **Authentication:** **None** — connect directly, no OAuth and no Bearer token.
 
-The dashboard's *Connect to ChatGPT* card shows the exact URL and header. Once connected,
+The dashboard's *Connect to ChatGPT* card shows the exact URL. Once connected,
 ChatGPT can call the tools below.
 
 ### MCP tools
@@ -194,7 +202,7 @@ Figure-based questions return the page image so nothing has to be guessed.
 ### Option A — Docker Compose (server + Qdrant)
 
 ```bash
-cp .env.example .env         # set MCP_AUTH_TOKEN and PUBLIC_BASE_URL
+cp .env.example .env         # set PUBLIC_BASE_URL (no auth token needed)
 docker compose up -d --build
 ```
 
@@ -212,7 +220,7 @@ your-domain.com {
 ### Option B — Any Node host
 
 1. Provision Node >= 20 and `poppler-utils`.
-2. Set env vars (point `QDRANT_URL` at your Qdrant, set `MCP_AUTH_TOKEN`, `PUBLIC_BASE_URL`).
+2. Set env vars (point `QDRANT_URL` at your Qdrant, set `PUBLIC_BASE_URL`).
 3. `yarn install && yarn warmup && yarn start` behind an HTTPS reverse proxy.
 
 Health check for load balancers: `GET /health`.
@@ -235,11 +243,12 @@ yarn test
 - **Unit tests** (no external services): question extraction, page-spanning questions,
   answer-key parsing, chunking, category/difficulty classification, duplicate hashing,
   vector math, answer checking, and PDF extraction (when the sample exists).
-- **Live e2e tests**: health endpoint, MCP auth, `tools/list`, semantic search, question
-  retrieval, quiz generation and answer checking against a running server. These **skip
-  automatically** if the server isn't reachable, so unit tests still run in isolation.
+- **Live e2e tests**: health endpoint, **public MCP (no auth)**, `tools/list`, semantic search,
+  Arabic question retrieval, quiz generation and answer checking against a running server. There
+  are also **scanned-PDF OCR tests** proving an image-only PDF yields real questions (not `0`).
+  These **skip automatically** if the server / OCR tools aren't available.
 
-Set `TEST_BASE_URL` / `MCP_AUTH_TOKEN` to point the e2e tests at a specific instance.
+Set `TEST_BASE_URL` to point the e2e tests at a specific instance (no token needed).
 
 ---
 
@@ -253,9 +262,11 @@ source's own answer/explanation over any model-generated content.
 ## Running in the Emergent preview environment
 
 In this hosted preview the server runs on port `3000` (exposed as the public preview URL),
-Qdrant runs locally on `6333`, and the optional LLM uses a small Python bridge
-(`backend/server.py`, `LLM_PROVIDER=bridge`) backed by the Emergent Universal Key. For a
-normal deployment set `LLM_PROVIDER=none` or `openai` and use the Docker Compose setup above.
+Qdrant runs locally on `6333`, Tesseract OCR (Arabic + English) is installed for scanned
+PDFs, and the optional LLM uses a small Python bridge (`backend/server.py`,
+`LLM_PROVIDER=bridge`) backed by the Emergent Universal Key for English→Arabic translation.
+The MCP endpoint is **public (no authentication)**. For a normal deployment set
+`LLM_PROVIDER=none` or `openai` and use the Docker Compose setup above.
 
 ## License
 

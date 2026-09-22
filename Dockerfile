@@ -2,8 +2,10 @@
 FROM node:20-bookworm-slim
 
 # poppler-utils provides pdftotext / pdftoppm / pdfimages for text + page-image extraction.
+# tesseract-ocr (+ Arabic/English data) powers OCR of scanned / CamScanner PDFs.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends poppler-utils ca-certificates \
+  && apt-get install -y --no-install-recommends \
+       poppler-utils tesseract-ocr tesseract-ocr-ara tesseract-ocr-eng ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -25,7 +27,11 @@ ENV NODE_ENV=production \
     PORT=3000 \
     SOURCES_DIR=/app/sources \
     DATA_DIR=/app/data \
-    TRANSFORMERS_CACHE=/app/data/models
+    TRANSFORMERS_CACHE=/app/data/models \
+    OCR_ENABLED=true \
+    OCR_LANGS=ara+eng \
+    PRESENT_LANGUAGE=ar \
+    WESTERN_DIGITS=true
 
 EXPOSE 3000
 

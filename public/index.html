@@ -32,7 +32,7 @@
     <main class="grid">
       <section class="panel span-2" data-testid="connect-panel">
         <div class="panel-head"><h2>Connect to ChatGPT</h2><span class="pill" data-testid="providers-pill"></span></div>
-        <p class="hint">Add this as a custom MCP connector (Streamable HTTP). Requests require the Bearer token.</p>
+        <p class="hint">Add this as a custom MCP connector (Streamable HTTP). No authentication is required.</p>
         <div class="field">
           <label>MCP endpoint</label>
           <div class="copy-row">
@@ -41,10 +41,9 @@
           </div>
         </div>
         <div class="field">
-          <label>Authorization header</label>
+          <label>Authentication</label>
           <div class="copy-row">
-            <input readonly data-testid="mcp-auth" id="mcpAuth" />
-            <button class="btn ghost" data-testid="copy-auth-btn" onclick="copyVal('mcpAuth')">Copy</button>
+            <input readonly data-testid="mcp-auth" id="mcpAuth" value="None — the /mcp endpoint is public" />
           </div>
         </div>
       </section>
@@ -59,15 +58,23 @@
             <small>Any IQ / aptitude / reasoning PDF. No code changes needed.</small>
           </div>
         </div>
+        <div id="uploadQueue" class="upload-queue" data-testid="upload-queue" hidden>
+          <div class="queue-head">
+            <h3>Upload queue <small>selected files — not uploaded yet</small></h3>
+            <span class="pill" id="queueCount" data-testid="queue-count">0</span>
+          </div>
+          <div id="queueList" class="queue-list" data-testid="queue-list"></div>
+        </div>
         <div class="row-actions">
           <button class="btn primary" data-testid="upload-btn" onclick="doUpload()">Upload &amp; index</button>
+          <button class="btn ghost" data-testid="clear-queue-btn" onclick="clearQueue()">Clear queue</button>
           <button class="btn ghost" data-testid="reindex-all-btn" onclick="reindexAll()">Re-index all</button>
         </div>
         <div id="ingestStatus" class="ingest-status" data-testid="ingest-status"></div>
       </section>
 
       <section class="panel span-3" data-testid="sources-panel">
-        <div class="panel-head"><h2>Indexed sources</h2><button class="btn ghost sm" data-testid="refresh-sources-btn" onclick="loadAll()">Refresh</button></div>
+        <div class="panel-head"><h2>Indexed sources <small style="font-weight:400;opacity:.6">— already uploaded &amp; on the server</small></h2><button class="btn ghost sm" data-testid="refresh-sources-btn" onclick="loadAll()">Refresh</button></div>
         <div class="table-wrap">
           <table>
             <thead>

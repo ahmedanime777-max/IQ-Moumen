@@ -17,7 +17,6 @@ export const config = {
   port: int(process.env.PORT, 3000),
   host: process.env.HOST || '0.0.0.0',
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, ''),
-  authToken: process.env.MCP_AUTH_TOKEN || '',
 
   sourcesDir: SOURCES_DIR,
   dataDir: DATA_DIR,
@@ -55,18 +54,12 @@ export const config = {
     autoIngest: bool(process.env.AUTO_INGEST, true),
   },
 
-  oauth: {
-    enabled: bool(process.env.OAUTH_ENABLED, true),
-    signingSecret:
-      process.env.OAUTH_SIGNING_SECRET || process.env.MCP_AUTH_TOKEN || 'dev-oauth-signing-secret',
-    accessTtl: int(process.env.OAUTH_ACCESS_TTL, 3600),
-    refreshTtl: int(process.env.OAUTH_REFRESH_TTL, 60 * 60 * 24 * 30),
-  },
-
   ocr: {
     enabled: bool(process.env.OCR_ENABLED, false),
     maxPages: int(process.env.OCR_MAX_PAGES, 25),
     langs: process.env.OCR_LANGS || 'ara+eng',
+    dpi: int(process.env.OCR_DPI, 300),
+    minUsefulChars: int(process.env.OCR_MIN_USEFUL_CHARS, 20),
   },
 
   language: {

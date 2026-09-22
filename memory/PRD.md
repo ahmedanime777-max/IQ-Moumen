@@ -20,7 +20,7 @@ Bearer-token-protected `POST /mcp`, and a web dashboard.
 - Node server runs on **port 3000** (via the frontend supervisor hook: `frontend/package.json` start -> `tsx src/server/index.ts`), so the preview URL exposes `/mcp`, `/health`, `/`, `/rest/*`.
 - Qdrant runs via `/etc/supervisor/conf.d/qdrant.conf` (native binary in `/app/vendor`, storage in `/app/data/qdrant`).
 - Python LLM bridge on :8001 (`/api/llm/complete`).
-- Public URL: https://logic-engine-23.preview.emergentagent.com  | MCP: `/mcp`.
+- Public URL: https://page-launch-170.preview.emergentagent.com  | MCP: `/mcp`.
 
 ## MCP tools
 list_sources, search_sources, get_question, get_random_question, generate_quiz, check_answer,

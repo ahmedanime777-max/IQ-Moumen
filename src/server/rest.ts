@@ -43,18 +43,8 @@ rest.get('/config', (_req, res) => {
   const base = config.publicBaseUrl || `http://localhost:${config.port}`;
   res.json({
     mcpUrl: `${base}/mcp`,
-    authRequired: !!config.authToken || config.oauth.enabled,
-    oauthEnabled: config.oauth.enabled,
-    oauth: config.oauth.enabled
-      ? {
-          issuer: base,
-          authorizationServerMetadata: `${base}/.well-known/oauth-authorization-server`,
-          protectedResourceMetadata: `${base}/.well-known/oauth-protected-resource`,
-          authorizationEndpoint: `${base}/oauth/authorize`,
-          tokenEndpoint: `${base}/oauth/token`,
-          registrationEndpoint: `${base}/oauth/register`,
-        }
-      : null,
+    authRequired: false,
+    authentication: 'none',
     embeddingProvider: config.embeddings.provider,
     llmProvider: config.llm.provider,
     presentLanguage: config.language.present,

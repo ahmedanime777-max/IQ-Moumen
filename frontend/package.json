@@ -61,7 +61,7 @@
     "zod": "3.24.4"
   },
   "scripts": {
-    "start": "cd /app && exec ./node_modules/.bin/tsx src/server/index.ts",
+    "start": "cd /app && exec bash scripts/start-server.sh",
     "build": "craco build",
     "test": "craco test"
   },

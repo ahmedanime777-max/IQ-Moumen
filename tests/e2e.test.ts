@@ -6,7 +6,6 @@ import { describe, it, expect, beforeAll } from 'vitest';
 // still run in isolation / CI without external services.
 
 const BASE = process.env.TEST_BASE_URL || 'http://localhost:3000';
-const TOKEN = process.env.MCP_AUTH_TOKEN || 'iq-mcp-local-dev-token-9f3a2b7c';
 
 let reachable = false;
 beforeAll(async () => {
@@ -24,7 +23,7 @@ async function mcp(method: string, params: unknown, id = 1) {
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
-      Authorization: `Bearer ${TOKEN}`,
+      // No Authorization header — the MCP endpoint is public (no OAuth/Bearer).
     },
     body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
   });
@@ -49,15 +48,30 @@ describe('health endpoint', () => {
   });
 });
 
-describe('MCP auth', () => {
-  it('rejects requests without a bearer token', async () => {
+describe('MCP is public (no authentication)', () => {
+  it('accepts MCP requests WITHOUT any Authorization header', async () => {
     if (!reachable) return;
     const res = await fetch(`${BASE}/mcp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
     });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.status).not.toBe(401);
+  });
+
+  it('exposes no OAuth discovery endpoints', async () => {
+    if (!reachable) return;
+    const r = await fetch(`${BASE}/.well-known/oauth-authorization-server`);
+    expect(r.status).toBe(404);
+  });
+
+  it('reports authentication: none in /rest/config', async () => {
+    if (!reachable) return;
+    const r = await fetch(`${BASE}/rest/config`);
+    const j = await r.json();
+    expect(j.authRequired).toBe(false);
+    expect(j.authentication).toBe('none');
   });
 });
 
@@ -96,12 +110,15 @@ describe('MCP tools', () => {
     expect(Array.isArray(data.results)).toBe(true);
   });
 
-  it('get_random_question returns a question without leaking the answer', async () => {
+  it('get_random_question returns an Arabic question with Western digits and no answer', async () => {
     if (!reachable) return;
     const { data } = await callTool('get_random_question', {});
     if (data && data.id) {
       expect(data).not.toHaveProperty('correctAnswer');
       expect(typeof data.questionText).toBe('string');
+      // HARD RULE: presentation is Arabic with Western digits only.
+      expect(data.displayLanguage).toBe('ar');
+      expect(data.questionText).not.toMatch(/[٠-٩۰-۹]/);
     }
   });
 

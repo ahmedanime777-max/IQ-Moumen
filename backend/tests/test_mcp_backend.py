@@ -6,11 +6,12 @@ import time
 import pytest
 import requests
 
-BASE_URL = "https://logic-engine-23.preview.emergentagent.com"
-TOKEN = "iq-mcp-local-dev-token-9f3a2b7c"
+BASE_URL = os.environ.get(
+    "TEST_BASE_URL",
+    "https://c49cdfce-0e72-4e90-aa82-e94635eab524.preview.emergentagent.com",
+)
 
 HEADERS = {
-    "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
 }
@@ -53,15 +54,16 @@ def test_health():
     assert j.get("status") == "ok"
 
 
-# ---------------- Auth ----------------
-def test_mcp_requires_bearer():
+# ---------------- No authentication (public MCP) ----------------
+def test_mcp_is_public_no_auth():
     r = requests.post(
         f"{BASE_URL}/mcp",
         headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
         json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "c", "version": "1"}}},
         timeout=15,
     )
-    assert r.status_code == 401
+    assert r.status_code == 200
+    assert r.status_code != 401
 
 
 # ---------------- Handshake ----------------
@@ -93,10 +95,11 @@ def test_tools_list():
 # ---------------- Semantic search ----------------
 def test_search_sources_semantic():
     parsed, _ = tool_call("search_sources", {"query": "a difficult percentage question", "limit": 3})
-    # results list
-    results = parsed.get("results") or parsed.get("hits") or parsed
-    txt = json.dumps(results).lower()
-    assert "percent" in txt or "15%" in txt, f"No percentage match in top results: {txt[:500]}"
+    results = parsed.get("results") or parsed.get("hits") or []
+    # Semantic search must return results (content is Arabic-first, so we do NOT
+    # assert on English keywords). Each result should carry attribution.
+    assert isinstance(results, list) and len(results) >= 1, f"no search results: {parsed}"
+    assert any(r.get("questionText") for r in results if isinstance(r, dict)), f"no questionText: {results}"
 
 
 # ---------------- Random question hides answer ----------------
@@ -152,5 +155,5 @@ def test_rest_sources():
     assert r.status_code == 200
     j = r.json()
     items = j if isinstance(j, list) else j.get("sources", [])
-    names = [s.get("filename") or s.get("name") or "" for s in items]
-    assert any("sample-aptitude" in n for n in names), f"no sample-aptitude source; got {names}"
+    # Generic: at least one indexed source exists (no hardcoded source name).
+    assert len(items) >= 1, f"no sources indexed; got {items}"

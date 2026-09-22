@@ -5,8 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
-import { requireBearer } from './auth.js';
-import { mountOAuth } from './oauth.js';
 import { buildMcpServer } from './mcp.js';
 import { rest } from './rest.js';
 import { startWatcher, syncSources } from '../ingestion/manager.js';
@@ -15,19 +13,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '../../public');
 
 const app = express();
-app.use(cors({ exposedHeaders: ['WWW-Authenticate'] }));
+app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
-
-// ---- OAuth 2.1 discovery + endpoints (for ChatGPT MCP connector) ----
-mountOAuth(app);
 
 // ---- Health ----
 const health = (_req: express.Request, res: express.Response) =>
   res.json({ status: 'ok', service: 'iq-aptitude-mcp', time: new Date().toISOString() });
 app.get('/health', health);
 
-// ---- MCP endpoint (Streamable HTTP, stateless) ----
+// ---- MCP endpoint (Streamable HTTP, stateless) — PUBLIC, no authentication ----
 async function handleMcp(req: express.Request, res: express.Response) {
   const server = buildMcpServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -49,9 +44,9 @@ async function handleMcp(req: express.Request, res: express.Response) {
     }
   }
 }
-app.post('/mcp', requireBearer, handleMcp);
+app.post('/mcp', handleMcp);
 // Alias so the endpoint is reachable behind /api-prefixed ingress rules too.
-app.post('/api/mcp', requireBearer, handleMcp);
+app.post('/api/mcp', handleMcp);
 
 const methodNotAllowed = (_req: express.Request, res: express.Response) =>
   res.status(405).json({
@@ -74,7 +69,7 @@ app.get('/', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 export async function start() {
   app.listen(config.port, config.host, async () => {
     logger.info(`IQ Aptitude MCP server listening on http://${config.host}:${config.port}`);
-    logger.info(`MCP endpoint: POST /mcp  (auth ${config.authToken ? 'ON' : 'OFF'})`);
+    logger.info(`MCP endpoint: POST /mcp  (authentication: none)`);
     logger.info(`Embeddings: ${config.embeddings.provider} | LLM: ${config.llm.provider}`);
     // Auto-sync sources on boot, then watch for changes.
     if (config.ingestion.autoIngest) {

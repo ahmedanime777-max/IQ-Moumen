@@ -30,7 +30,7 @@ async function loadConfig() {
   const c = await api('/config');
   const url = c.mcpUrl;
   $('mcpUrl').value = url;
-  $('mcpAuth').value = c.authRequired ? 'Bearer <MCP_AUTH_TOKEN from your .env>' : '(no auth configured)';
+  $('mcpAuth').value = 'None — the /mcp endpoint is public (no OAuth, no Bearer token)';
   document.querySelector('[data-testid="providers-pill"]').textContent =
     `embeddings: ${c.embeddingProvider} · llm: ${c.llmProvider}`;
 }
@@ -97,18 +97,85 @@ async function pollIngest() {
   } catch {}
 }
 
+// ---- Upload queue: files selected locally but NOT yet uploaded ----
+let selectedFiles = [];
+
+function formatSize(bytes) {
+  if (!bytes && bytes !== 0) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function addFiles(fileList) {
+  const incoming = Array.from(fileList || []);
+  let added = 0, rejected = 0;
+  for (const f of incoming) {
+    if (!f.name.toLowerCase().endsWith('.pdf')) { rejected++; continue; }
+    // De-duplicate by name+size so the same file isn't queued twice.
+    if (selectedFiles.some((x) => x.file.name === f.name && x.file.size === f.size)) continue;
+    selectedFiles.push({ file: f, status: 'Ready' });
+    added++;
+  }
+  if (rejected) toast(`${rejected} non-PDF file(s) ignored`, true);
+  renderQueue();
+}
+
+function removeQueued(idx) {
+  selectedFiles.splice(idx, 1);
+  renderQueue();
+}
+
+function clearQueue() {
+  selectedFiles = [];
+  $('fileInput').value = '';
+  renderQueue();
+}
+
+function renderQueue() {
+  const box = $('uploadQueue');
+  const list = $('queueList');
+  $('queueCount').textContent = String(selectedFiles.length);
+  if (!selectedFiles.length) {
+    box.setAttribute('hidden', '');
+    list.innerHTML = '';
+    return;
+  }
+  box.removeAttribute('hidden');
+  list.innerHTML = selectedFiles
+    .map((item, i) => {
+      const f = item.file;
+      const statusClass = item.status === 'Ready' ? 'ready' : (item.status === 'Uploading…' ? 'indexing' : 'ready');
+      return `<div class="queue-item" data-testid="queue-item">
+        <div class="qi-icon">PDF</div>
+        <div class="qi-main">
+          <div class="qi-name" data-testid="queue-name" title="${f.name.replace(/"/g, '')}">${f.name}</div>
+          <div class="qi-meta"><span data-testid="queue-size">${formatSize(f.size)}</span> · <span data-testid="queue-type">${f.type || 'application/pdf'}</span></div>
+        </div>
+        <span class="status ${statusClass}" data-testid="queue-status">${item.status}</span>
+        <button class="btn danger sm" data-testid="queue-remove" ${item.status === 'Uploading…' ? 'disabled' : ''} onclick="removeQueued(${i})">Remove</button>
+      </div>`;
+    })
+    .join('');
+}
+
 async function doUpload() {
-  const input = $('fileInput');
-  if (!input.files.length) return toast('Choose PDF files first', true);
+  if (!selectedFiles.length) return toast('Choose PDF files first', true);
   const fd = new FormData();
-  for (const f of input.files) fd.append('files', f);
+  for (const item of selectedFiles) {
+    fd.append('files', item.file);
+    item.status = 'Uploading…';
+  }
+  renderQueue();
   $('ingestStatus').textContent = 'Uploading…';
   try {
     await api('/upload', { method: 'POST', body: fd });
-    input.value = '';
+    clearQueue();
     toast('Uploaded — indexing started');
     pollIngest();
   } catch (e) {
+    for (const item of selectedFiles) item.status = 'Ready';
+    renderQueue();
     toast(e.message, true);
   }
 }
@@ -205,10 +272,15 @@ const dz = $('dropzone');
   dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); })
 );
 dz.addEventListener('drop', (e) => {
-  $('fileInput').files = e.dataTransfer.files;
-  doUpload();
+  // Add to the queue for review — do NOT auto-upload.
+  addFiles(e.dataTransfer.files);
 });
 dz.addEventListener('click', (e) => { if (e.target === dz || e.target.classList.contains('dz-inner')) $('fileInput').click(); });
+// Browsing files immediately shows them in the upload queue.
+$('fileInput').addEventListener('change', (e) => {
+  addFiles(e.target.files);
+  e.target.value = ''; // allow re-selecting the same file after removing it
+});
 
 fillSelect($('fCategory'), CATEGORIES, 'Any category');
 fillSelect($('fDifficulty'), DIFFICULTIES, 'Any difficulty');
