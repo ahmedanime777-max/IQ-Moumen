@@ -49,6 +49,15 @@ describe('source variant matching (generic, no hardcoded names)', () => {
   });
 });
 
+describe('safe source file resolution (path traversal)', () => {
+  it('rejects traversal / unknown ids', async () => {
+    const { resolveSourceFile } = await import('../src/services/library.js');
+    expect(resolveSourceFile('../../etc/passwd')).toBeNull();
+    expect(resolveSourceFile('..%2f..%2fetc%2fpasswd')).toBeNull();
+    expect(resolveSourceFile('does-not-exist')).toBeNull();
+  });
+});
+
 describe('test-number parsing (Arabic + English)', () => {
   it('parses English and Arabic test headings', () => {
     expect(parseTestNumber('Test 7 — Numerical')).toBe('7');

@@ -18,12 +18,12 @@ HEADERS = {
 
 def parse_sse(text):
     """Extract JSON from SSE 'data:' lines."""
-    for line in text.splitlines():
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    for line in normalized.split("\n"):
         if line.startswith("data:"):
             payload = line[5:].strip()
             if payload:
                 return json.loads(payload)
-    # sometimes plain json
     return json.loads(text)
 
 
@@ -38,7 +38,7 @@ def mcp_call(method, params=None, req_id=1):
 def tool_call(name, arguments):
     r = mcp_call("tools/call", {"name": name, "arguments": arguments}, req_id=42)
     assert r.status_code == 200, f"tool {name} HTTP {r.status_code}: {r.text[:400]}"
-    data = parse_sse(r.text)
+    data = parse_sse(r.content.decode("utf-8"))
     assert "result" in data, f"No result: {data}"
     content = data["result"]["content"]
     text_block = next(b for b in content if b.get("type") == "text")

@@ -1,0 +1,27 @@
+{
+  "summary": "End-to-end verification of new features on IQ Aptitude MCP server. 31/31 backend pytest cases pass (11 existing + 20 new covering OAuth 2.1 discovery/register/PKCE-authorize/token/refresh/invalid_grant, MCP dual-auth (static + OAuth Bearer), non-blocking /rest/upload (~<1s) and /rest/reindex, /rest/ingest-status, sources-ready with Noor imagePages=66, /rest/file/{id} open + download + 404, path-traversal blocked, Arabic-first questionText with Western digits only, quiz Arabic + no correctAnswer, check_answer Arabic explanation). Frontend dashboard shows stats (3 sources, 12 questions, 63 passages), all 3 sources 'ready', language tags on each row, and Open/Download/Re-index/Delete testids per source.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/test_mcp_backend.py",
+    "/app/test_reports/pytest/all.xml",
+    "/app/test_reports/pytest/new_features.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MCP SSE responses contain unescaped characters that Python's str.splitlines() treats as line terminators (likely U+2028/U+000B/etc inside Arabic strings). Not a functional bug (the JSON is valid), but any strict SSE parser using splitlines will break. Consider forcing escape of these codepoints in the emitted JSON string (JSON.stringify with a replacer that escapes \\u2028\\u2029\\u000b\\u000c) or emitting only ASCII (ensure_ascii equivalent). Test scaffolding was updated to split on \\n only + force UTF-8 decode.",
+    "MCP /mcp responses do not set Content-Type charset=utf-8 explicitly (requests default to latin-1 decode of body). Recommend setting Content-Type: text/event-stream; charset=utf-8.",
+    "/rest/file/..%2f... is blocked at Cloudflare edge with HTTP 400 (before reaching Express). This is fine for prod, but note that path-traversal safety of resolveSourceFile could not be exercised through the preview URL directly. Recommend adding a unit test in /app/tests exercising resolveSourceFile with traversal inputs."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (new)",
+    "/app/backend/tests/test_mcp_backend.py (parse_sse UTF-8 + newline fix)"
+  ],
+  "success_rate": {"backend": "100% (31/31)", "frontend": "100%"},
+  "test_credentials": "Static MCP: iq-mcp-local-dev-token-9f3a2b7c ; OAuth via dynamic registration + PKCE S256.",
+  "seed_data_creation": "Uploaded a tiny valid PDF as TEST_upload.pdf via /rest/upload (indexed to 'ready').",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Two backend test files under /app/backend/tests. Run serially with `pytest -n 0` because reindex/upload background work is server-global. parse_sse must split on '\\n' only (not str.splitlines()) and decode response body as UTF-8 (r.content.decode('utf-8')) because server does not declare charset and Arabic content contains bytes Python interprets as extra line separators. OAuth flow: POST /oauth/register -> GET /oauth/authorize (auto-approves, no login) -> POST /oauth/token grant_type=authorization_code with PKCE verifier -> refresh_token. Access tokens are HS256 JWT accepted at /mcp alongside static MCP_AUTH_TOKEN."
+}

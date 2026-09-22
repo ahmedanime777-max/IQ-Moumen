@@ -32,6 +32,22 @@ get_explanation, get_similar_questions, get_source_info (+ ChatGPT-compat `searc
 - Semantic search, image content blocks over MCP, source-first answer checking, and LLM
   explanation fallback all verified end-to-end. Answer-key pages excluded from search.
 
+## v2 enhancements (2026-09-22)
+- **Arabic-first presentation**: every question/choice/explanation returned by MCP tools is presented in Arabic with WESTERN digits (0-9). English/other sources are auto-translated to Arabic (LLM bridge) and cached in Qdrant; Arabic-Indic digits are normalized to Western at ingestion and output. Arabic-first retrieval (prefers `language=ar`, falls back to any).
+- **Source variants + cross-language recovery**: generic filename/page-count/semantic linking into `variantGroup`; when Arabic text is unclear (broken OCR/missing values), the matching English question (by test/question number) is used to recover values and re-presented in Arabic (marked `recovery.used`).
+- **Robust PDF extraction**: Poppler → pdf.js (pure JS) → optional OCR (tesseract.js, `OCR_ENABLED`). No hard dependency on Poppler at runtime; Dockerfile still bundles it.
+- **Reliability fix (reported bug)**: `TypeError: fetch failed` was the Qdrant client dropping under the per-question near-dup loop. Added retry/backoff (`rq()`) to all Qdrant calls, made dedup non-fatal + bounded, smaller upsert batches. Large 66-page Arabic PDF now ingests without crashing.
+- **Async/background ingestion**: upload returns immediately (no proxy timeout); ingestion runs in a background queue with progress phases (Queued→Extracting→Detecting→Indexing→Completed) via `/rest/ingest-status` and per-source `phase`/`progress`.
+- **Source open/download**: `GET /rest/file/:id` (inline) and `?download=1` (attachment) by safe document id; path-traversal-safe (`resolveSourceFile`).
+- **MCP OAuth 2.1**: discovery (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`), dynamic registration, PKCE authorize, token + refresh (HS256 JWT access tokens). Static `MCP_AUTH_TOKEN` bearer still accepted. 401s send `WWW-Authenticate`.
+- **Dashboard**: language tags, tests count, progress/phase, linked variants, error details, Open/Download/Re-index/Delete per source.
+- Tests: 39 vitest (unit+features+live e2e) + testing-agent 31/31 backend, 100% frontend.
+
+### Known limitations
+- Scanned/image-only Arabic PDFs (e.g. the uploaded 66-page book, whose text layer is mostly a watermark) need `OCR_ENABLED=true` + the optional `tesseract.js` dependency to extract Arabic questions; otherwise only page images + sparse passages are indexed (no crash).
+- OAuth `/authorize` auto-approves (single-user private server; no end-user login screen).
+- Cross-lingual semantic matching is weak (MiniLM); recovery relies mainly on test/question-number structure.
+
 ## Backlog / future
 - P1: OCR for scanned (image-only) PDFs (currently text-layer based; figures rendered as page images).
 - P1: Per-question figure cropping (currently full page image is returned).
