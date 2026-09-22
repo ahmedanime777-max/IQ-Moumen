@@ -147,8 +147,8 @@ describe('dedupe + vector utils', () => {
 
 describe('pdf extraction (requires poppler + sample PDF)', () => {
   const sample = path.join(config.sourcesDir, 'sample-aptitude-test.pdf');
-  it.skipIf(!fs.existsSync(sample))('extracts pages and preserves page numbers', () => {
-    const pages = extractPages(sample);
+  it.skipIf(!fs.existsSync(sample))('extracts pages and preserves page numbers', async () => {
+    const pages = await extractPages(sample);
     expect(getPageCount(sample)).toBeGreaterThan(0);
     expect(pages.length).toBeGreaterThan(0);
     expect(pages[0].page).toBe(1);

@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { fileSha256, stableUuid, uuid } from '../utils/hash.js';
 import { contentHash } from '../utils/text.js';
-import { extractPages, getPageCount, renderPageImage } from '../extraction/pdf.js';
+import { extractPages, getPageCount, renderPageImage, lastExtractionMethod } from '../extraction/pdf.js';
 import { parseDocument } from '../extraction/questions.js';
 import { embedBatched, getEmbedder } from '../embeddings/index.js';
 import {
@@ -15,6 +15,9 @@ import {
   countPoints,
 } from '../vector/qdrant.js';
 import { documents } from '../database/store.js';
+import { detectLanguage, parseTestNumber } from '../utils/lang.js';
+import { toWesternDigits } from '../utils/lang.js';
+import { assignVariantGroup } from '../services/variants.js';
 import type { DocumentRecord, QuestionRecord } from '../types.js';
 
 export interface IngestResult {
@@ -45,6 +48,18 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
   const documentId = stableUuid(name);
   const fileHash = fileSha256(filePath);
   const now = new Date().toISOString();
+  const sizeBytes = (() => {
+    try {
+      return fs.statSync(filePath).size;
+    } catch {
+      return 0;
+    }
+  })();
+
+  const setPhase = (phase: string, progress: number) => {
+    const prev = documents.get(documentId);
+    if (prev) documents.set(documentId, { ...prev, phase, progress, updatedAt: new Date().toISOString() });
+  };
 
   const record: DocumentRecord = {
     id: documentId,
@@ -52,9 +67,15 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
     fileHash,
     pages: 0,
     status: 'indexing',
+    phase: 'Extracting text',
+    progress: 5,
     questionCount: 0,
     passageCount: 0,
     imagePages: 0,
+    tests: 0,
+    language: 'other',
+    linkedVariants: [],
+    sizeBytes,
     categories: [],
     sections: [],
     updatedAt: now,
@@ -69,11 +90,24 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
     // Remove any previous vectors for this source (re-index safe).
     await deleteBySource(name);
 
-    const pages = extractPages(filePath);
+    const rawPages = await extractPages(filePath);
+    const extractionMethod = lastExtractionMethod;
+    // Normalize Arabic-Indic digits to Western everywhere (policy: Western digits),
+    // which also lets the numbered-question detector match Arabic numbering.
+    const pages = config.language.westernDigits
+      ? rawPages.map((p) => ({ ...p, text: toWesternDigits(p.text) }))
+      : rawPages;
     record.pages = pages.length || getPageCount(filePath);
 
+    setPhase('Detecting questions', 30);
     const parsed = parseDocument(pages);
     const questionPages = new Set(parsed.map((q) => q.page));
+
+    // Document-level language from the extracted text.
+    const docLanguage = detectLanguage(pages.map((p) => p.text).join(' ').slice(0, 20000));
+    // Establish the variant group (links Arabic/English versions of a source).
+    documents.set(documentId, { ...documents.get(documentId)!, language: docLanguage });
+    const variantGroup = assignVariantGroup(documents.get(documentId)!);
 
     // Render page images for pages that contain images / visual questions.
     const imageDirForDoc = path.join(config.imagesDir, documentId);
@@ -97,9 +131,13 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
     const sections = new Set<string>();
     const categories = new Set<string>();
 
+    const tests = new Set<string>();
+
     for (const q of parsed) {
       if (q.section) sections.add(q.section);
       if (q.category) categories.add(q.category);
+      const testNumber = parseTestNumber(q.section);
+      if (testNumber) tests.add(testNumber);
       records.push({
         id: uuid(),
         type: 'question',
@@ -121,6 +159,10 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
         hasImage: q.hasImage,
         requiresImage: q.requiresImage,
         imageRefs: pageImages.get(q.page) || [],
+        language: detectLanguage(`${q.questionText} ${(q.choices || []).join(' ')}`),
+        variantGroup,
+        testNumber,
+        confidence: 1,
         contentHash: contentHash(q.questionText),
         createdAt: now,
       });
@@ -149,12 +191,16 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
           hasImage: p.imageCount > 0,
           requiresImage: false,
           imageRefs: pageImages.get(p.page) || [],
+          language: detectLanguage(chunk),
+          variantGroup,
+          confidence: 1,
           contentHash: contentHash(chunk),
           createdAt: now,
         });
       }
     }
 
+    setPhase('Indexing (embeddings)', 60);
     // Embed all texts (batched).
     const texts = records.map((r) =>
       [r.section, r.questionText, (r.choices || []).join(' ')].filter(Boolean).join('\n')
@@ -167,6 +213,7 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
     const toUpsert: { vector: number[]; payload: QuestionRecord }[] = [];
     let duplicatesSkipped = 0;
 
+    setPhase('Detecting duplicates', 75);
     for (let i = 0; i < records.length; i++) {
       const rec = records[i];
       if (seenHashes.has(rec.contentHash)) {
@@ -174,19 +221,26 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
         continue;
       }
       seenHashes.add(rec.contentHash);
-      if (rec.type === 'question' && preexisting > 0) {
-        const dup = await findNearDuplicate(vectors[i], 0.985);
-        if (dup && dup.type === 'question') {
-          duplicatesSkipped++;
-          continue;
+      // Cross-document near-duplicate check is bounded and non-fatal: a transient
+      // Qdrant hiccup must never abort ingestion of a large document.
+      if (rec.type === 'question' && preexisting > 0 && i < 600) {
+        try {
+          const dup = await findNearDuplicate(vectors[i], 0.985);
+          if (dup && dup.type === 'question') {
+            duplicatesSkipped++;
+            continue;
+          }
+        } catch (e) {
+          logger.warn('near-duplicate check skipped (transient)', String(e));
         }
       }
       toUpsert.push({ vector: vectors[i], payload: rec });
     }
 
-    // Upsert in chunks.
-    for (let i = 0; i < toUpsert.length; i += 256) {
-      await upsertQuestions(toUpsert.slice(i, i + 256));
+    setPhase('Indexing (upserting)', 85);
+    // Upsert in modest chunks (large Arabic books can produce thousands of points).
+    for (let i = 0; i < toUpsert.length; i += 128) {
+      await upsertQuestions(toUpsert.slice(i, i + 128));
     }
 
     const qCount = toUpsert.filter((p) => p.payload.type === 'question').length;
@@ -195,9 +249,16 @@ export async function ingestDocument(filePath: string): Promise<IngestResult> {
     const done: DocumentRecord = {
       ...record,
       status: 'ready',
+      phase: 'Completed',
+      progress: 100,
       questionCount: qCount,
       passageCount: pCount,
       imagePages,
+      tests: tests.size,
+      language: docLanguage,
+      variantGroup,
+      extractionMethod,
+      linkedVariants: [],
       categories: [...categories].sort(),
       sections: [...sections].slice(0, 100),
       indexedAt: new Date().toISOString(),

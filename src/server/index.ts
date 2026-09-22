@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { requireBearer } from './auth.js';
+import { mountOAuth } from './oauth.js';
 import { buildMcpServer } from './mcp.js';
 import { rest } from './rest.js';
 import { startWatcher, syncSources } from '../ingestion/manager.js';
@@ -14,8 +15,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '../../public');
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '20mb' }));
+app.use(cors({ exposedHeaders: ['WWW-Authenticate'] }));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+// ---- OAuth 2.1 discovery + endpoints (for ChatGPT MCP connector) ----
+mountOAuth(app);
 
 // ---- Health ----
 const health = (_req: express.Request, res: express.Response) =>
@@ -73,7 +78,7 @@ export async function start() {
     logger.info(`Embeddings: ${config.embeddings.provider} | LLM: ${config.llm.provider}`);
     // Auto-sync sources on boot, then watch for changes.
     if (config.ingestion.autoIngest) {
-      syncSources().catch((e) => logger.error('initial sync failed', String(e)));
+      syncSources({ background: true }).catch((e) => logger.error('initial sync failed', String(e)));
       startWatcher();
     }
   });

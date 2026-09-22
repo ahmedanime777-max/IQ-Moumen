@@ -43,9 +43,22 @@ rest.get('/config', (_req, res) => {
   const base = config.publicBaseUrl || `http://localhost:${config.port}`;
   res.json({
     mcpUrl: `${base}/mcp`,
-    authRequired: !!config.authToken,
+    authRequired: !!config.authToken || config.oauth.enabled,
+    oauthEnabled: config.oauth.enabled,
+    oauth: config.oauth.enabled
+      ? {
+          issuer: base,
+          authorizationServerMetadata: `${base}/.well-known/oauth-authorization-server`,
+          protectedResourceMetadata: `${base}/.well-known/oauth-protected-resource`,
+          authorizationEndpoint: `${base}/oauth/authorize`,
+          tokenEndpoint: `${base}/oauth/token`,
+          registrationEndpoint: `${base}/oauth/register`,
+        }
+      : null,
     embeddingProvider: config.embeddings.provider,
     llmProvider: config.llm.provider,
+    presentLanguage: config.language.present,
+    westernDigits: config.language.westernDigits,
     autoIngest: config.ingestion.autoIngest,
   });
 });
@@ -64,12 +77,14 @@ rest.get('/sources/:name', (req, res) => {
 
 rest.post('/upload', upload.array('files', 20), async (req, res) => {
   const files = ((req.files as Express.Multer.File[]) || []).map((f) => persistUpload(f));
-  const plan = await syncSources();
+  // Non-blocking: kick off ingestion in the background and return immediately
+  // so large PDFs never hit the client/proxy upload timeout ("fetch failed").
+  const plan = await syncSources({ background: true });
   res.json({ uploaded: files, plan, jobStatus });
 });
 
 rest.post('/sync', async (_req, res) => {
-  const plan = await syncSources();
+  const plan = await syncSources({ background: true });
   res.json({ plan, jobStatus });
 });
 
@@ -77,9 +92,19 @@ rest.get('/sync-plan', (_req, res) => res.json(planSync()));
 
 rest.post('/reindex', async (req, res) => {
   const source = req.body?.source as string | undefined;
-  if (source) await reindexOne(source);
-  else await reindexAll(true);
+  if (source) await reindexOne(source, true);
+  else await reindexAll(true, true);
   res.json({ ok: true, jobStatus });
+});
+
+// Open / download the ORIGINAL uploaded PDF by safe document id (no path traversal).
+rest.get('/file/:id', (req, res) => {
+  const resolved = lib.resolveSourceFile(req.params.id);
+  if (!resolved) return res.status(404).json({ error: 'File not found' });
+  res.setHeader('Content-Type', 'application/pdf');
+  const disposition = req.query.download ? 'attachment' : 'inline';
+  res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(resolved.name)}"`);
+  fs.createReadStream(resolved.path).pipe(res);
 });
 
 rest.delete('/sources/:name', async (req, res) => {

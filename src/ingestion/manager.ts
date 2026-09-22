@@ -76,20 +76,39 @@ async function runQueue() {
 }
 
 export async function enqueueIngest(names: string[]): Promise<void> {
-  for (const n of names) if (!jobStatus.queue.includes(n)) jobStatus.queue.push(n);
+  markQueued(names);
   await runQueue();
 }
 
-export async function syncSources(opts: { deleteMissing?: boolean } = {}): Promise<SyncPlan> {
+// Fire-and-forget: returns immediately so large uploads don't block the HTTP
+// request (prevents client/proxy 'fetch failed' timeouts). Progress is polled.
+export function enqueueIngestBackground(names: string[]): void {
+  markQueued(names);
+  runQueue().catch((e) => logger.error('background ingest failed', String(e)));
+}
+
+function markQueued(names: string[]) {
+  for (const n of names) {
+    if (!jobStatus.queue.includes(n) && jobStatus.current !== n) jobStatus.queue.push(n);
+    const rec = documents.get(stableUuid(n));
+    if (rec) documents.set(rec.id, { ...rec, status: 'queued', phase: 'Queued', progress: 0 });
+  }
+}
+
+export async function syncSources(
+  opts: { deleteMissing?: boolean; background?: boolean } = {}
+): Promise<SyncPlan> {
   const plan = planSync();
   if (opts.deleteMissing !== false) {
     for (const name of plan.deleted) await deleteSource(name);
   }
-  await enqueueIngest([...plan.added, ...plan.modified]);
+  const names = [...plan.added, ...plan.modified];
+  if (opts.background) enqueueIngestBackground(names);
+  else await enqueueIngest(names);
   return plan;
 }
 
-export async function reindexAll(force = true): Promise<void> {
+export async function reindexAll(force = true, background = false): Promise<void> {
   const names = listSourceFiles().map((f) => path.basename(f));
   if (force) {
     for (const name of names) {
@@ -97,11 +116,13 @@ export async function reindexAll(force = true): Promise<void> {
       if (rec) documents.set(rec.id, { ...rec, status: 'pending' });
     }
   }
-  await enqueueIngest(names);
+  if (background) enqueueIngestBackground(names);
+  else await enqueueIngest(names);
 }
 
-export async function reindexOne(name: string): Promise<void> {
-  await enqueueIngest([name]);
+export async function reindexOne(name: string, background = false): Promise<void> {
+  if (background) enqueueIngestBackground([name]);
+  else await enqueueIngest([name]);
 }
 
 export async function deleteSource(name: string): Promise<void> {

@@ -231,7 +231,7 @@ function extractExplanation(block: string): string | undefined {
   return exp.length > 5 ? exp : undefined;
 }
 
-const QSTART_RE = /^\s*(?:Q(?:uestion)?\.?\s*|Problem\s+|\()?(\d{1,3})\s*[.)\]:]\s+(\S.*)$/;
+const QSTART_RE = /^\s*(?:Q(?:uestion)?\.?\s*|Problem\s+|السؤال\s*|سؤال\s*|س\s*|\()?(\d{1,3})\s*[.)\]:\-]\s+(\S.*)$/;
 
 export function parseDocument(pages: PageContent[]): ParsedQuestion[] {
   const answerKey = buildAnswerKey(pages);

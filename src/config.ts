@@ -54,6 +54,25 @@ export const config = {
     imageDpi: int(process.env.IMAGE_DPI, 110),
     autoIngest: bool(process.env.AUTO_INGEST, true),
   },
+
+  oauth: {
+    enabled: bool(process.env.OAUTH_ENABLED, true),
+    signingSecret:
+      process.env.OAUTH_SIGNING_SECRET || process.env.MCP_AUTH_TOKEN || 'dev-oauth-signing-secret',
+    accessTtl: int(process.env.OAUTH_ACCESS_TTL, 3600),
+    refreshTtl: int(process.env.OAUTH_REFRESH_TTL, 60 * 60 * 24 * 30),
+  },
+
+  ocr: {
+    enabled: bool(process.env.OCR_ENABLED, false),
+    maxPages: int(process.env.OCR_MAX_PAGES, 25),
+    langs: process.env.OCR_LANGS || 'ara+eng',
+  },
+
+  language: {
+    present: (process.env.PRESENT_LANGUAGE || 'ar') as 'ar' | 'en' | 'none',
+    westernDigits: bool(process.env.WESTERN_DIGITS, true),
+  },
 };
 
 export const CATEGORIES = [

@@ -1,7 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { extractPagesPdfjs } from './pdfjs.js';
 
 export interface PageContent {
   page: number;
@@ -9,8 +12,20 @@ export interface PageContent {
   imageCount: number;
 }
 
+// Records which extraction backend produced the most recent result.
+export let lastExtractionMethod = 'none';
+
 function run(cmd: string, args: string[]): string {
-  return execFileSync(cmd, args, { maxBuffer: 1024 * 1024 * 200 }).toString('utf8');
+  return execFileSync(cmd, args, { maxBuffer: 1024 * 1024 * 300 }).toString('utf8');
+}
+
+function popplerAvailable(): boolean {
+  try {
+    run('pdftotext', ['-v']);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getPageCount(pdfPath: string): number {
@@ -23,12 +38,11 @@ export function getPageCount(pdfPath: string): number {
   }
 }
 
-// Count embedded raster images per page using `pdfimages -list`.
 function imageCountsByPage(pdfPath: string): Map<number, number> {
   const counts = new Map<number, number>();
   try {
     const out = run('pdfimages', ['-list', pdfPath]);
-    const lines = out.split('\n').slice(2); // skip header rows
+    const lines = out.split('\n').slice(2);
     for (const line of lines) {
       const cols = line.trim().split(/\s+/);
       const page = parseInt(cols[0], 10);
@@ -40,15 +54,8 @@ function imageCountsByPage(pdfPath: string): Map<number, number> {
   return counts;
 }
 
-// Extract per-page text (poppler inserts form-feed \f between pages).
-export function extractPages(pdfPath: string): PageContent[] {
-  let raw = '';
-  try {
-    raw = run('pdftotext', ['-layout', '-enc', 'UTF-8', pdfPath, '-']);
-  } catch (e) {
-    logger.error(`pdftotext failed for ${pdfPath}`, String(e));
-    throw new Error('PDF text extraction failed (poppler pdftotext required).');
-  }
+function extractWithPoppler(pdfPath: string): PageContent[] {
+  const raw = run('pdftotext', ['-layout', '-enc', 'UTF-8', pdfPath, '-']);
   const parts = raw.split('\f');
   const imgCounts = imageCountsByPage(pdfPath);
   const pages: PageContent[] = [];
@@ -60,7 +67,82 @@ export function extractPages(pdfPath: string): PageContent[] {
   return pages;
 }
 
-// Render a single page to PNG. Returns the file path (relative names handled by caller).
+const textLen = (ps: PageContent[]) =>
+  ps.reduce((a, p) => a + p.text.replace(/\s/g, '').length, 0);
+
+// Optional OCR fallback for scanned/image-only PDFs. Uses tesseract.js if
+// installed; silently skips if the dependency or poppler rendering is missing.
+async function ocrPages(pdfPath: string, pageCount: number): Promise<PageContent[] | null> {
+  let Tesseract: any;
+  try {
+    Tesseract = (await import('tesseract.js' as any)).default ?? (await import('tesseract.js' as any));
+  } catch {
+    logger.warn('OCR requested but tesseract.js is not installed; skipping OCR.');
+    return null;
+  }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-'));
+  const pages: PageContent[] = [];
+  const max = Math.min(pageCount, config.ocr.maxPages);
+  for (let p = 1; p <= max; p++) {
+    const img = renderPageImage(pdfPath, p, tmp, 150);
+    if (!img) continue;
+    try {
+      const { data } = await Tesseract.recognize(img, config.ocr.langs);
+      pages.push({ page: p, text: data.text || '', imageCount: 1 });
+    } catch (e) {
+      logger.warn(`OCR failed on page ${p}`, String(e));
+    }
+  }
+  fs.rmSync(tmp, { recursive: true, force: true });
+  return pages.length ? pages : null;
+}
+
+// Extract per-page text with a robust multi-backend strategy:
+//   1) Poppler pdftotext (best layout)  ->  2) pdf.js (pure JS)  ->  3) OCR (optional)
+export async function extractPages(pdfPath: string): Promise<PageContent[]> {
+  let pages: PageContent[] | null = null;
+
+  if (popplerAvailable()) {
+    try {
+      pages = extractWithPoppler(pdfPath);
+      lastExtractionMethod = 'poppler';
+    } catch (e) {
+      logger.warn(`Poppler extraction failed, falling back to pdf.js: ${String(e)}`);
+    }
+  } else {
+    logger.warn('Poppler not available; using pdf.js extractor.');
+  }
+
+  if (!pages || textLen(pages) < 5) {
+    try {
+      const alt = await extractPagesPdfjs(pdfPath);
+      if (!pages || textLen(alt) > textLen(pages)) {
+        pages = alt;
+        lastExtractionMethod = 'pdfjs';
+      }
+    } catch (e) {
+      logger.warn(`pdf.js extraction failed: ${String(e)}`);
+    }
+  }
+
+  if (!pages) {
+    throw new Error(
+      'PDF text extraction failed: neither Poppler nor pdf.js could read this file.'
+    );
+  }
+
+  // Scanned/image-only document: try OCR if enabled.
+  if (textLen(pages) < 5 && config.ocr.enabled) {
+    const ocr = await ocrPages(pdfPath, pages.length || getPageCount(pdfPath)).catch(() => null);
+    if (ocr && textLen(ocr) > textLen(pages)) {
+      pages = ocr;
+      lastExtractionMethod = 'ocr';
+    }
+  }
+
+  return pages;
+}
+
 export function renderPageImage(
   pdfPath: string,
   page: number,

@@ -25,6 +25,13 @@ export interface QuestionRecord {
   requiresImage: boolean;
   imageRefs: string[]; // relative image paths under DATA_DIR/images
 
+  language: 'ar' | 'en' | 'other';
+  variantGroup?: string; // groups Arabic/English versions of the same source
+  testNumber?: string;
+  arabicText?: string; // cached Arabic presentation (translation) of questionText
+  arabicChoices?: string[]; // cached Arabic presentation of choices
+  confidence: number; // 0..1 extraction/recovery confidence
+
   contentHash: string;
   createdAt: string;
 }
@@ -34,13 +41,22 @@ export interface DocumentRecord {
   name: string; // file base name (e.g. book1.pdf)
   fileHash: string;
   pages: number;
-  status: 'indexing' | 'ready' | 'error' | 'pending';
+  status: 'indexing' | 'ready' | 'error' | 'pending' | 'queued';
+  phase?: string; // human-readable current phase (Extracting text, Indexing, ...)
+  progress?: number; // 0..100
   questionCount: number;
   passageCount: number;
   imagePages: number;
+  tests: number;
+  language: 'ar' | 'en' | 'other';
+  variantGroup?: string;
+  linkedVariants: string[]; // names of linked source variants
+  extractionMethod?: string;
   categories: string[];
   sections: string[];
   error?: string;
+  warning?: string;
+  sizeBytes?: number;
   indexedAt?: string;
   updatedAt: string;
 }

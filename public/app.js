@@ -49,19 +49,31 @@ async function loadSources() {
     body.innerHTML = '<tr><td colspan="7" class="empty">No sources yet — upload a PDF to begin.</td></tr>';
   } else {
     body.innerHTML = sources
-      .map(
-        (s) => `<tr data-testid="source-row-${s.name}">
-        <td><strong>${s.name}</strong></td>
-        <td><span class="status ${s.status}">${s.status}</span></td>
-        <td>${s.questions}</td>
+      .map((s) => {
+        const statusCell =
+          s.status === 'ready'
+            ? `<span class="status ready">ready</span>`
+            : s.status === 'error'
+              ? `<span class="status error" title="${(s.error || '').replace(/"/g, '')}">error</span>`
+              : `<span class="status ${s.status}">${s.phase || s.status} ${s.progress ? s.progress + '%' : ''}</span>`;
+        const langBadge = `<span class="tag">${s.language || '—'}</span>`;
+        const linked = (s.linkedVariants || []).length
+          ? `<span class="tag" title="Linked variants: ${(s.linkedVariants || []).join(', ')}">↔ ${(s.linkedVariants || []).length} variant(s)</span>`
+          : '';
+        return `<tr data-testid="source-row-${s.name}">
+        <td><strong>${s.name}</strong> ${langBadge} ${linked}${s.error ? `<div style="color:#f2707a;font-size:11px" data-testid="source-error">${s.error}</div>` : ''}</td>
+        <td>${statusCell}</td>
+        <td>${s.questions}${s.tests ? ` <span class="tag">${s.tests} tests</span>` : ''}</td>
         <td>${s.pages}</td>
         <td>${s.imagePages}</td>
-        <td><div class="tags">${(s.categories || []).slice(0, 4).map((c) => `<span class="tag">${c}</span>`).join('') || '<span class="tag">—</span>'}</div></td>
+        <td><div class="tags">${(s.categories || []).slice(0, 3).map((c) => `<span class="tag">${c}</span>`).join('') || '<span class="tag">—</span>'}</div></td>
         <td style="text-align:right;white-space:nowrap">
+          <a class="btn ghost sm" data-testid="open-${s.name}" href="/rest/file/${s.id}" target="_blank" rel="noopener">Open</a>
+          <a class="btn ghost sm" data-testid="download-${s.name}" href="/rest/file/${s.id}?download=1">Download</a>
           <button class="btn ghost sm" data-testid="reindex-${s.name}" onclick="reindexOne('${s.name.replace(/'/g, "\\'")}')">Re-index</button>
           <button class="btn danger sm" data-testid="delete-${s.name}" onclick="deleteSource('${s.name.replace(/'/g, "\\'")}')">Delete</button>
-        </td></tr>`
-      )
+        </td></tr>`;
+      })
       .join('');
   }
   fillSelect($('fSource'), sources.map((s) => s.name), 'Any source');

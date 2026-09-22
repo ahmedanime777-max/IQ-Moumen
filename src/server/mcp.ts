@@ -48,12 +48,15 @@ export function buildMcpServer(): McpServer {
     { name: 'iq-aptitude-trainer', version: '1.0.0' },
     {
       instructions:
-        'Interactive IQ/aptitude training over the user\'s own uploaded sources. ' +
-        'When the user practices: pick a question with get_question or get_random_question, ' +
-        'present it WITHOUT the answer, wait for their response, then call check_answer and ' +
-        'explain using the source explanation when available. Never reveal answers before the ' +
-        'user attempts them. If a question requiresImage, show the returned image and do not guess ' +
-        'missing visual content. Always keep source/page attribution.',
+        'Interactive Arabic-first IQ/aptitude trainer over the user\'s own uploaded sources. ' +
+        'ALWAYS present questions, choices and explanations to the user in ARABIC, but keep all ' +
+        'numeric digits in Western form (0-9, never ٠-٩). The tools already return Arabic text with ' +
+        'Western digits — present it as-is. When the user practices: pick a question with get_question ' +
+        'or get_random_question, present it WITHOUT the answer, wait for their answer, then call ' +
+        'check_answer and explain in Arabic using the source explanation when available. Never reveal ' +
+        'answers before the user attempts them. If a question requiresImage, show the returned image and ' +
+        'do not guess missing visual content. If a field "recovery.used" is true, the Arabic content was ' +
+        'reconstructed from an English source variant. Always keep source/page attribution.',
     }
   );
 
